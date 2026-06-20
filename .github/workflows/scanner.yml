@@ -2,8 +2,8 @@ name: Scanner SMA CEDEARs
 
 on:
   schedule:
-    # Corre cada 30 minutos, en horario de mercado USA (9:30-16:00 ET = 14:30-21:00 UTC aprox)
-    # Cron usa UTC siempre
+# Corre cada hora en punto, lunes a viernes, 9:00-19:00 hora Argentina
+    # Argentina es UTC-3, por lo que 9-19 ART = 12-22 UTC
     - cron: '0 12-22 * * 1-5'
   workflow_dispatch:
     # Permite tambien correrlo manualmente desde GitHub con un click
