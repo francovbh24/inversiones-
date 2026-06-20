@@ -4,7 +4,7 @@ on:
   schedule:
     # Corre cada 30 minutos, en horario de mercado USA (9:30-16:00 ET = 14:30-21:00 UTC aprox)
     # Cron usa UTC siempre
-    - cron: '0,30 14-21 * * 1-5'
+    - cron: '0 12-22 * * 1-5'
   workflow_dispatch:
     # Permite tambien correrlo manualmente desde GitHub con un click
 
