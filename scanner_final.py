@@ -231,7 +231,6 @@ def formatear_mensaje(df, name_map, vix_valor):
     ahora = datetime.now().strftime('%Y-%m-%d %H:%M')
     confirmadas = df[df['estado'] == 'ENTRADA_CONFIRMADA'].sort_values('distancia_pct_a_sma300')
     cercanas = df[df['estado'] == 'CERCA_DE_ENTRADA'].sort_values('distancia_pct_a_sma300', ascending=False)
-    cartera = df[df['ticker'].isin(TICKERS_CARTERA)]
 
     lineas = [f"<b>SCANNER SMA — {ahora}</b>"]
     vix_txt = f"{vix_valor}" if vix_valor is not None else "N/D"
@@ -259,12 +258,6 @@ def formatear_mensaje(df, name_map, vix_valor):
         for _, r in cercanas.head(15).iterrows():
             nombre = name_map.get(r['ticker'], r['ticker'])
             lineas.append(f"• {r['ticker']} ({nombre[:25]}) — ${r['precio_actual']} | dist {r['distancia_pct_a_sma300']}% (umbral {r['umbral_ajustado_pct']}%){fmt_rsi(r)}")
-        lineas.append("")
-
-    lineas.append(f"🔒 <b>TU CARTERA</b>")
-    for _, r in cartera.sort_values('distancia_pct_a_sma300', ascending=False).iterrows():
-        emoji = "✅" if r['estado'] == 'ENTRADA_CONFIRMADA' else ("⚠️" if r['estado']=='CERCA_DE_ENTRADA' else "▫️")
-        lineas.append(f"{emoji} {r['ticker']} — ${r['precio_actual']} | SMA300: ${r['sma300']} | dist: {r['distancia_pct_a_sma300']}%{fmt_rsi(r)}")
 
     return "\n".join(lineas)
 
