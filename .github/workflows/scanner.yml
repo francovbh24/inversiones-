@@ -1,36 +1,28 @@
 name: Scanner SMA CEDEARs
-
 on:
   schedule:
-    # Corre cada hora, lunes a viernes, 9:00-19:00 hora Argentina (12-22 UTC)
     - cron: '0 12-22 * * 1-5'
   workflow_dispatch:
-    # Permite correrlo manualmente desde GitHub con un click
-
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
       - name: Instalar dependencias
         run: |
           pip install yfinance pandas numpy requests
-
       - name: Correr scanner
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python scanner_final.py
-
-      - name: Subir resultados como artifact
+      - name: Subir resultados
         uses: actions/upload-artifact@v4
         with:
           name: scanner-resultados
