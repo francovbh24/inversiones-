@@ -216,7 +216,8 @@ def escanear_ticker(ticker, df, rsi_diario_serie):
     sma300 = c.rolling(300).mean()
     sma1000 = c.rolling(1000).mean()
     atr = calcular_atr(h, l, c, ATR_PERIODO)
-    rsi_1h_serie = calcular_rsi(c, RSI_PERIODO)  # RSI sobre las MISMAS velas 1h de la estrategia
+    rsi_1h_serie = calcular_rsi(c, RSI_PERIODO)
+    ultimo_rsi_1h = rsi_1h_serie.iloc[-1] if not pd.isna(rsi_1h_serie.iloc[-1]) else None
 
     # RSI calculado sobre velas DIARIAS (1d), informativo en los otros grupos
     ultimo_rsi = None
@@ -225,7 +226,13 @@ def escanear_ticker(ticker, df, rsi_diario_serie):
         if len(rsi_diario.dropna()):
             ultimo_rsi = rsi_diario.dropna().iloc[-1]
 
-    ultimo_rsi_1h = rsi_1h_serie.iloc[-1] if not pd.isna(rsi_1h_serie.iloc[-1]) else None
+    # Performance ultimos 12 meses (usando datos diarios ya descargados)
+    perf_1y = None
+    if rsi_diario_serie is not None and len(rsi_diario_serie) >= 252:
+        precio_actual_d = float(rsi_diario_serie.dropna().iloc[-1])
+        precio_hace_1y = float(rsi_diario_serie.dropna().iloc[-252])
+        if precio_hace_1y > 0:
+            perf_1y = round((precio_actual_d - precio_hace_1y) / precio_hace_1y * 100, 1)
 
     ultimo_precio = c.iloc[-1]
     ultimo_sma300 = sma300.iloc[-1]
@@ -263,12 +270,12 @@ def escanear_ticker(ticker, df, rsi_diario_serie):
         and distancia_pct <= UMBRAL_YA_CRUZO_PCT
     )
 
-    # Grupo independiente: tendencia alcista + RSI(1h) en sobreventa.
+    # Grupo independiente: tendencia alcista + RSI(1d) en sobreventa.
     # No excluye a un activo de los otros grupos, es una etiqueta aparte.
     rsi1h_sobreventa = (
         cond1_tendencia
-        and ultimo_rsi_1h is not None
-        and ultimo_rsi_1h <= RSI_SOBREVENTA_1H
+        and ultimo_rsi is not None
+        and ultimo_rsi <= RSI_SOBREVENTA_1H
     )
 
     if cond1_tendencia and cruce_confirmado:
@@ -297,6 +304,7 @@ def escanear_ticker(ticker, df, rsi_diario_serie):
         "pendiente_sma300_pct": round(float(pendiente_sma300), 2),
         "rsi_1h": round(float(ultimo_rsi_1h), 1) if ultimo_rsi_1h is not None else None,
         "rsi1h_sobreventa": bool(rsi1h_sobreventa),
+        "perf_1y": perf_1y,
     }
 
 # ──────────────────────────────────────────────────────────
@@ -307,11 +315,21 @@ def fmt_rsi(r):
         return ""
     return " ⚠️RSI&gt;80" if r['rsi_sobre_80'] else f" RSI {r['rsi']}"
 
-def ordenar_por_pendiente(grupo_df, umbral_fuerte=2.0):
+def fmt_1y(r):
+    if r['perf_1y'] is None:
+        return ""
+    signo = "+" if r['perf_1y'] >= 0 else ""
+    return f" | 1Y {signo}{r['perf_1y']}%"
+
+def ordenar_grupo(grupo_df, umbral_fuerte=2.0):
+    """
+    Divide en dos subgrupos por pendiente de SMA300, y dentro de cada
+    subgrupo ordena de mayor a menor performance de los ultimos 12 meses.
+    """
     fuertes = grupo_df[grupo_df['pendiente_sma300_pct'] >= umbral_fuerte].sort_values(
-        'pendiente_sma300_pct', ascending=False)
+        'perf_1y', ascending=False)
     resto = grupo_df[grupo_df['pendiente_sma300_pct'] < umbral_fuerte].sort_values(
-        'pendiente_sma300_pct', ascending=False)
+        'perf_1y', ascending=False)
     return fuertes, resto
 
 def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, max_items=15):
@@ -319,7 +337,7 @@ def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, max_items=15):
     if len(grupo_df) == 0:
         return lineas
 
-    fuertes, resto = ordenar_por_pendiente(grupo_df)
+    fuertes, resto = ordenar_grupo(grupo_df)
 
     lineas.append(f"{emoji} <b>{titulo} ({len(grupo_df)})</b>")
 
@@ -329,7 +347,8 @@ def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, max_items=15):
             nombre = name_map.get(r['ticker'], r['ticker'])
             lineas.append(
                 f"  • {r['ticker']} ({nombre[:22]}) — ${r['precio_actual']} | "
-                f"dist {r['distancia_pct_a_sma300']}% | pend.SMA300 {r['pendiente_sma300_pct']}%{fmt_rsi(r)}"
+                f"dist {r['distancia_pct_a_sma300']}% | pend.SMA300 {r['pendiente_sma300_pct']}%"
+                f"{fmt_1y(r)}{fmt_rsi(r)}"
             )
 
     if len(resto):
@@ -338,24 +357,27 @@ def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, max_items=15):
             nombre = name_map.get(r['ticker'], r['ticker'])
             lineas.append(
                 f"  • {r['ticker']} ({nombre[:22]}) — ${r['precio_actual']} | "
-                f"dist {r['distancia_pct_a_sma300']}% | pend.SMA300 {r['pendiente_sma300_pct']}%{fmt_rsi(r)}"
+                f"dist {r['distancia_pct_a_sma300']}% | pend.SMA300 {r['pendiente_sma300_pct']}%"
+                f"{fmt_1y(r)}{fmt_rsi(r)}"
             )
 
     lineas.append("")
     return lineas
 
 def construir_bloque_simple(titulo, emoji, grupo_df, name_map, max_items=20):
-    """Bloque sin subgrupos, ordenado de RSI mas bajo a mas alto (mas sobrevendido primero)."""
+    """Bloque sin subgrupos, ordenado de mayor a menor performance 1Y."""
     lineas = []
     if len(grupo_df) == 0:
         return lineas
-    ordenado = grupo_df.sort_values('rsi_1h', ascending=True)
+    ordenado = grupo_df.sort_values('perf_1y', ascending=False)
     lineas.append(f"{emoji} <b>{titulo} ({len(grupo_df)})</b>")
     for _, r in ordenado.head(max_items).iterrows():
         nombre = name_map.get(r['ticker'], r['ticker'])
+        rsi_val = r['rsi'] if r['rsi'] is not None else "N/D"
         lineas.append(
             f"• {r['ticker']} ({nombre[:22]}) — ${r['precio_actual']} | "
-            f"RSI(1h) {r['rsi_1h']} | dist SMA300 {r['distancia_pct_a_sma300']}%"
+            f"RSI(1d) {rsi_val} | dist SMA300 {r['distancia_pct_a_sma300']}%"
+            f"{fmt_1y(r)}"
         )
     lineas.append("")
     return lineas
@@ -386,7 +408,7 @@ def formatear_mensaje(df, name_map, vix_valor):
         "CERCA DE ENTRAR (umbral ajustado por ATR)", "🟡", cercanas, name_map)
 
     lineas += construir_bloque_simple(
-        f"RSI — tendencia alcista + RSI(1h) ≤ {RSI_SOBREVENTA_1H:.0f}", "🟣", sobreventa, name_map)
+        f"RSI — tendencia alcista + RSI(1d) ≤ {RSI_SOBREVENTA_1H:.0f}", "🟣", sobreventa, name_map)
 
     return "\n".join(lineas)
 
