@@ -392,7 +392,16 @@ def formatear_mensaje(df, name_map, vix_valor):
 
     lineas = [f"<b>SCANNER SMA — {ahora}</b>"]
     vix_txt = f"{vix_valor}" if vix_valor is not None else "N/D"
-    lineas.append(f"VIX actual: {vix_txt}")
+    if vix_valor is not None:
+        if vix_valor < 15:
+            vix_nivel = "🟢 BAJO — mercado tranquilo, buen ambiente para entrar"
+        elif vix_valor < 25:
+            vix_nivel = "🟡 MEDIO — precaucion moderada"
+        else:
+            vix_nivel = "🔴 ALTO — mercado nervioso, mayor riesgo de stops"
+    else:
+        vix_nivel = ""
+    lineas.append(f"VIX actual: {vix_txt}  {vix_nivel}")
     lineas.append("")
 
     lineas += construir_bloque_grupo(
