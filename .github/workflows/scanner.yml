@@ -1,7 +1,7 @@
 name: Scanner SMA CEDEARs
 on:
   schedule:
-    - cron: "0 12-22 * * 1-5"
+    - cron: "0 13-23 * * 1-5"
   workflow_dispatch:
 jobs:
   scan:
