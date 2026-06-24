@@ -181,6 +181,42 @@ def descargar_vix():
         print(f"Error descargando VIX: {e}")
         return None
 
+def obtener_earnings_dates(tickers):
+    """Descarga la proxima fecha de earnings para cada ticker."""
+    from datetime import date as date_type
+    earnings_map = {}
+    hoy = date_type.today()
+    for t in tickers:
+        try:
+            cal = yf.Ticker(t).calendar
+            fechas = cal.get('Earnings Date', [])
+            if fechas:
+                proximas = [f for f in fechas if f >= hoy]
+                earnings_map[t] = proximas[0] if proximas else fechas[-1]
+        except:
+            pass
+    return earnings_map
+
+def fmt_earnings(ticker, earnings_map):
+    """Formatea la fecha de earnings con nivel de alerta segun cercania."""
+    from datetime import date as date_type
+    fecha = earnings_map.get(ticker)
+    if fecha is None:
+        return ""
+    hoy = date_type.today()
+    dias = (fecha - hoy).days
+    fecha_str = fecha.strftime('%d/%m/%y')
+    if dias < 0:
+        return f" | rep.{fecha_str}"
+    elif dias == 0:
+        return f" | ⚠️ EARNINGS HOY"
+    elif dias <= 7:
+        return f" | ⚠️ earnings en {dias}d ({fecha_str})"
+    elif dias <= 30:
+        return f" | 📅 earnings {fecha_str}"
+    else:
+        return f" | earnings {fecha_str}"
+
 # ──────────────────────────────────────────────────────────
 # INDICADORES
 # ──────────────────────────────────────────────────────────
@@ -332,7 +368,7 @@ def ordenar_grupo(grupo_df, umbral_fuerte=2.0):
         'perf_1y', ascending=False)
     return fuertes, resto
 
-def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, max_items=15):
+def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, earnings_map, max_items=15):
     lineas = []
     if len(grupo_df) == 0:
         return lineas
@@ -348,7 +384,7 @@ def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, max_items=15):
             lineas.append(
                 f"  • {r['ticker']} ({nombre[:22]}) — ${r['precio_actual']} | "
                 f"dist {r['distancia_pct_a_sma300']}% | pend.SMA300 {r['pendiente_sma300_pct']}%"
-                f"{fmt_1y(r)}{fmt_rsi(r)}"
+                f"{fmt_1y(r)}{fmt_rsi(r)}{fmt_earnings(r['ticker'], earnings_map)}"
             )
 
     if len(resto):
@@ -358,13 +394,13 @@ def construir_bloque_grupo(titulo, emoji, grupo_df, name_map, max_items=15):
             lineas.append(
                 f"  • {r['ticker']} ({nombre[:22]}) — ${r['precio_actual']} | "
                 f"dist {r['distancia_pct_a_sma300']}% | pend.SMA300 {r['pendiente_sma300_pct']}%"
-                f"{fmt_1y(r)}{fmt_rsi(r)}"
+                f"{fmt_1y(r)}{fmt_rsi(r)}{fmt_earnings(r['ticker'], earnings_map)}"
             )
 
     lineas.append("")
     return lineas
 
-def construir_bloque_simple(titulo, emoji, grupo_df, name_map, max_items=20):
+def construir_bloque_simple(titulo, emoji, grupo_df, name_map, earnings_map, max_items=20):
     """Bloque sin subgrupos, ordenado de mayor a menor performance 1Y."""
     lineas = []
     if len(grupo_df) == 0:
@@ -377,12 +413,12 @@ def construir_bloque_simple(titulo, emoji, grupo_df, name_map, max_items=20):
         lineas.append(
             f"• {r['ticker']} ({nombre[:22]}) — ${r['precio_actual']} | "
             f"RSI(1d) {rsi_val} | dist SMA300 {r['distancia_pct_a_sma300']}%"
-            f"{fmt_1y(r)}"
+            f"{fmt_1y(r)}{fmt_earnings(r['ticker'], earnings_map)}"
         )
     lineas.append("")
     return lineas
 
-def formatear_mensaje(df, name_map, vix_valor):
+def formatear_mensaje(df, name_map, vix_valor, earnings_map):
     ahora = datetime.now().strftime('%Y-%m-%d %H:%M')
 
     ya_cruzo = df[df['estado'] == 'YA_CRUZO_CERCA']
@@ -405,19 +441,19 @@ def formatear_mensaje(df, name_map, vix_valor):
     lineas.append("")
 
     lineas += construir_bloque_grupo(
-        f"YA CRUZARON, a &lt;{UMBRAL_YA_CRUZO_PCT}% sobre SMA300", "🔵", ya_cruzo, name_map)
+        f"YA CRUZARON, a &lt;{UMBRAL_YA_CRUZO_PCT}% sobre SMA300", "🔵", ya_cruzo, name_map, earnings_map)
 
     if len(confirmadas):
-        lineas += construir_bloque_grupo("ENTRADA CONFIRMADA ESTA VELA", "🟢", confirmadas, name_map)
+        lineas += construir_bloque_grupo("ENTRADA CONFIRMADA ESTA VELA", "🟢", confirmadas, name_map, earnings_map)
     else:
         lineas.append("🟢 Sin entradas nuevas confirmadas esta hora")
         lineas.append("")
 
     lineas += construir_bloque_grupo(
-        "CERCA DE ENTRAR (umbral ajustado por ATR)", "🟡", cercanas, name_map)
+        "CERCA DE ENTRAR (umbral ajustado por ATR)", "🟡", cercanas, name_map, earnings_map)
 
     lineas += construir_bloque_simple(
-        f"RSI — tendencia alcista + RSI(1d) ≤ {RSI_SOBREVENTA_1H:.0f}", "🟣", sobreventa, name_map)
+        f"RSI — tendencia alcista + RSI(1d) ≤ {RSI_SOBREVENTA_1H:.0f}", "🟣", sobreventa, name_map, earnings_map)
 
     return "\n".join(lineas)
 
@@ -442,6 +478,10 @@ def main():
     rsi_dict = descargar_datos_1d(tickers)
     print(f"\nTickers con datos diarios suficientes: {len(rsi_dict)}\n")
 
+    print("Descargando fechas de earnings...")
+    earnings_map = obtener_earnings_dates(tickers)
+    print(f"Earnings obtenidos para {len(earnings_map)} tickers\n")
+
     print("Analizando condiciones de entrada...")
     resultados = []
     for t, df_t in data_dict.items():
@@ -453,7 +493,7 @@ def main():
     df = pd.DataFrame(resultados)
     df.to_csv("scanner_resultados.csv", index=False)
 
-    mensaje = formatear_mensaje(df, name_map, vix_valor)
+    mensaje = formatear_mensaje(df, name_map, vix_valor, earnings_map)
     print("\n" + mensaje)
 
     enviar_telegram(mensaje)
